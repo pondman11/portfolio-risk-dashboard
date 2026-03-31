@@ -141,7 +141,6 @@ def _equal_rebalance(holdings):
     w = round(100.0 / n, 1)
     for h in holdings:
         h["weight"] = w
-    # Fix rounding so it sums to 100
     remainder = round(100.0 - w * n, 1)
     if holdings:
         holdings[0]["weight"] = round(holdings[0]["weight"] + remainder, 1)
@@ -173,7 +172,7 @@ def update_portfolio_store(new_ticker, remove_clicks, weight_values, current_dat
 
     trigger_id = ctx.triggered[0]["prop_id"]
 
-    # ── Add stock ──────────────────────────────────────────────
+    # ── Add stock
     if trigger_id == "add-ticker-dropdown.value":
         if not new_ticker:
             return no_update, no_update
@@ -181,9 +180,9 @@ def update_portfolio_store(new_ticker, remove_clicks, weight_values, current_dat
         if new_ticker not in existing:
             current_data.append({"ticker": new_ticker, "weight": 0})
             current_data = _equal_rebalance(current_data)
-        return current_data, None  # Clear dropdown
+        return current_data, None
 
-    # ── Remove stock ───────────────────────────────────────────
+    # ── Remove stock
     if "remove-btn" in trigger_id:
         btn_id = json.loads(trigger_id.split(".")[0])
         idx = btn_id["index"]
@@ -192,7 +191,7 @@ def update_portfolio_store(new_ticker, remove_clicks, weight_values, current_dat
             current_data = _equal_rebalance(current_data)
         return current_data, no_update
 
-    # ── Edit weight ────────────────────────────────────────────
+    # ── Edit weight
     if "weight-input" in trigger_id:
         btn_id = json.loads(trigger_id.split(".")[0])
         idx = btn_id["index"]
@@ -219,7 +218,6 @@ def render_holdings(holdings):
         color = charts.PALETTE[(i + 1) % len(charts.PALETTE)]
         row = html.Div(
             [
-                # Color accent
                 html.Div(
                     "",
                     style={
@@ -231,9 +229,7 @@ def render_holdings(holdings):
                         "flexShrink": "0",
                     },
                 ),
-                # Ticker
                 html.Span(h["ticker"], className="holding-ticker"),
-                # Editable weight input
                 dbc.Input(
                     id={"type": "weight-input", "index": i},
                     type="number",
@@ -254,7 +250,6 @@ def render_holdings(holdings):
                     },
                 ),
                 html.Span("%", style={"color": "#4a5060", "fontSize": "0.72rem", "marginRight": "8px"}),
-                # Remove button
                 html.Button(
                     "×",
                     id={"type": "remove-btn", "index": i},
@@ -334,7 +329,7 @@ def update_dashboard(n_clicks, holdings_data, period):
     returns = rm.log_returns(prices)
     port_ret = rm.portfolio_returns(returns, weights)
 
-    # KPI
+    # ── Portfolio metrics ─────────────────────────────────────
     ann_ret = rm.annualised_return(port_ret)
     ann_vol = rm.annualised_vol(port_ret)
     sharpe = rm.sharpe_ratio(port_ret)
@@ -343,14 +338,33 @@ def update_dashboard(n_clicks, holdings_data, period):
     var_95 = rm.parametric_var(port_ret, 0.95)
     var_99 = rm.parametric_var(port_ret, 0.99)
 
-    kpi = build_kpi_row({
-        "ann_return": ann_ret,
-        "ann_vol": ann_vol,
-        "sharpe": sharpe,
-        "max_dd": mdd,
-    })
+    # ── Benchmark metrics (SPY) ───────────────────────────────
+    bench = None
+    if "SPY" in returns.columns:
+        spy_ret = returns["SPY"]
+        b_ann_ret = rm.annualised_return(spy_ret)
+        b_ann_vol = rm.annualised_vol(spy_ret)
+        b_sharpe = rm.sharpe_ratio(spy_ret)
+        b_cum = (1 + spy_ret).cumprod() - 1
+        b_mdd = rm.max_drawdown(b_cum)
+        bench = {
+            "ann_return": b_ann_ret,
+            "ann_vol": b_ann_vol,
+            "sharpe": b_sharpe,
+            "max_dd": b_mdd,
+        }
 
-    # Charts
+    kpi = build_kpi_row(
+        {
+            "ann_return": ann_ret,
+            "ann_vol": ann_vol,
+            "sharpe": sharpe,
+            "max_dd": mdd,
+        },
+        bench=bench,
+    )
+
+    # ── Charts ────────────────────────────────────────────────
     fig_cum = charts.cumulative_returns_chart(returns, port_ret, "SPY")
 
     vol30 = rm.rolling_volatility(port_ret, 30)
