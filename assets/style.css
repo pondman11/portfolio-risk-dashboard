@@ -45,31 +45,20 @@ body {
 /* ─── Charts ──────────────────────────────────────────────────── */
 .dash-graph .js-plotly-plot { border-radius: 14px; }
 
-/* ─── Section labels ──────────────────────────────────────────── */
-.section-label {
-    color: #4a5060;
-    font-size: 0.65rem;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    font-weight: 600;
-    margin-bottom: 16px;
-    padding-left: 2px;
-}
-
 /* ─── Sidebar ─────────────────────────────────────────────────── */
 .sidebar {
     background: linear-gradient(180deg, #111318 0%, #0d0f13 100%) !important;
     border-right: 1px solid rgba(255, 255, 255, 0.04);
 }
 
-/* ─── Holding pills ───────────────────────────────────────────── */
+/* ─── Holding rows ────────────────────────────────────────────── */
 .holding-row {
     display: flex;
     align-items: center;
-    padding: 8px 12px;
+    padding: 6px 10px;
     border-radius: 10px;
     background: rgba(255, 255, 255, 0.03);
-    margin-bottom: 6px;
+    margin-bottom: 5px;
     transition: background 0.15s ease;
 }
 .holding-row:hover {
@@ -78,66 +67,43 @@ body {
 .holding-ticker {
     font-family: 'Inter', monospace;
     font-weight: 600;
-    font-size: 0.85rem;
+    font-size: 0.82rem;
     color: #e0e4ea;
     flex: 1;
-}
-.holding-weight {
-    font-size: 0.8rem;
-    color: #8a92a0;
-    margin-right: 8px;
 }
 .remove-btn {
     background: none;
     border: none;
-    color: #4a5060;
+    color: #3a3f4a;
     cursor: pointer;
     font-size: 1rem;
     padding: 0 4px;
     line-height: 1;
     transition: color 0.15s ease;
     border-radius: 4px;
+    flex-shrink: 0;
 }
 .remove-btn:hover {
     color: #ff6b6b;
     background: rgba(255, 107, 107, 0.1);
 }
 
-/* ─── Add stock form ──────────────────────────────────────────── */
-.add-stock-btn {
-    background: rgba(255, 255, 255, 0.04) !important;
-    border: 1px dashed rgba(255, 255, 255, 0.1) !important;
-    color: #5a6270 !important;
-    border-radius: 10px !important;
-    font-size: 0.8rem !important;
-    font-weight: 500 !important;
-    transition: all 0.2s ease !important;
-    padding: 8px !important;
+/* ─── Inline weight input ─────────────────────────────────────── */
+.holding-row input[type="number"] {
+    -moz-appearance: textfield;
 }
-.add-stock-btn:hover {
-    background: rgba(255, 255, 255, 0.07) !important;
+.holding-row input[type="number"]::-webkit-outer-spin-button,
+.holding-row input[type="number"]::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+.holding-row input:focus {
     border-color: rgba(0, 212, 170, 0.3) !important;
-    color: #00d4aa !important;
+    outline: none;
+    box-shadow: 0 0 0 1px rgba(0, 212, 170, 0.15);
 }
 
 /* ─── Dropdown styling ────────────────────────────────────────── */
-.Select-control {
-    background-color: #1a1d23 !important;
-    border-color: #2a2d35 !important;
-}
-.Select-menu-outer {
-    background-color: #1a1d23 !important;
-    border-color: #2a2d35 !important;
-}
-.Select-option {
-    background-color: #1a1d23 !important;
-    color: #e0e4ea !important;
-}
-.Select-option.is-focused {
-    background-color: #2a2d35 !important;
-}
-
-/* Dash dropdown overrides */
 .dash-dropdown .Select-control {
     background-color: #1a1d23 !important;
     border: 1px solid #2a2d35 !important;
@@ -150,11 +116,13 @@ body {
 }
 .dash-dropdown .Select-value-label,
 .dash-dropdown .Select-placeholder {
-    color: #8a92a0 !important;
+    color: #5a6270 !important;
+    font-size: 0.8rem !important;
 }
 .dash-dropdown .Select-option {
     background-color: #1a1d23 !important;
     color: #c8cdd5 !important;
+    font-size: 0.8rem !important;
 }
 .dash-dropdown .Select-option.is-focused {
     background-color: rgba(0, 212, 170, 0.1) !important;
@@ -178,11 +146,20 @@ body {
 }
 
 /* ─── Period selector ─────────────────────────────────────────── */
+.period-btn {
+    white-space: nowrap !important;
+    flex-wrap: nowrap !important;
+}
+.period-btn .form-check {
+    display: inline-block !important;
+}
 .period-btn .btn-outline-secondary {
     border-color: #2a2d35 !important;
-    color: #6a7080 !important;
+    color: #5a6270 !important;
     border-radius: 8px !important;
-    font-size: 0.75rem !important;
+    font-size: 0.72rem !important;
+    padding: 4px 10px !important;
+    white-space: nowrap !important;
 }
 
 /* ─── Validation badge ────────────────────────────────────────── */
@@ -190,7 +167,8 @@ body {
     font-size: 0.72rem;
     font-weight: 500;
     border-radius: 8px;
-    padding: 6px 12px;
+    padding: 5px 10px;
+    display: inline-block;
 }
 
 /* ─── Responsive tweaks ───────────────────────────────────────── */

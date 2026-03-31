@@ -8,7 +8,7 @@ Design: Sleek, minimal, premium dark UI. Data-forward, no clutter.
 
 import json
 import dash
-from dash import html, dcc, Input, Output, State, callback_context, no_update
+from dash import html, dcc, Input, Output, State, callback_context, no_update, ALL
 import dash_bootstrap_components as dbc
 import pandas as pd
 import numpy as np
@@ -131,48 +131,78 @@ app.layout = html.Div(
 )
 
 
+# ─── Helper: equal rebalance ─────────────────────────────────────────
+
+def _equal_rebalance(holdings):
+    """Set all holdings to equal weight summing to 100%."""
+    n = len(holdings)
+    if n == 0:
+        return holdings
+    w = round(100.0 / n, 1)
+    for h in holdings:
+        h["weight"] = w
+    # Fix rounding so it sums to 100
+    remainder = round(100.0 - w * n, 1)
+    if holdings:
+        holdings[0]["weight"] = round(holdings[0]["weight"] + remainder, 1)
+    return holdings
+
+
 # ─── Callbacks: Portfolio management ─────────────────────────────────
 
 @app.callback(
-    Output("portfolio-store", "data"),
     [
-        Input("confirm-add-btn", "n_clicks"),
-        Input({"type": "remove-btn", "index": dash.ALL}, "n_clicks"),
+        Output("portfolio-store", "data"),
+        Output("add-ticker-dropdown", "value"),
     ],
     [
-        State("new-ticker-dropdown", "value"),
-        State("new-weight-input", "value"),
+        Input("add-ticker-dropdown", "value"),
+        Input({"type": "remove-btn", "index": ALL}, "n_clicks"),
+        Input({"type": "weight-input", "index": ALL}, "value"),
+    ],
+    [
         State("portfolio-store", "data"),
     ],
     prevent_initial_call=True,
 )
-def update_portfolio_store(add_clicks, remove_clicks, new_ticker, new_weight, current_data):
-    """Add or remove holdings from the portfolio store."""
+def update_portfolio_store(new_ticker, remove_clicks, weight_values, current_data):
+    """Add, remove, or edit holdings. Add/remove auto-rebalance equally."""
     ctx = callback_context
     if not ctx.triggered:
-        return no_update
+        return no_update, no_update
 
     trigger_id = ctx.triggered[0]["prop_id"]
 
-    # Handle remove
+    # ── Add stock ──────────────────────────────────────────────
+    if trigger_id == "add-ticker-dropdown.value":
+        if not new_ticker:
+            return no_update, no_update
+        existing = {h["ticker"] for h in current_data}
+        if new_ticker not in existing:
+            current_data.append({"ticker": new_ticker, "weight": 0})
+            current_data = _equal_rebalance(current_data)
+        return current_data, None  # Clear dropdown
+
+    # ── Remove stock ───────────────────────────────────────────
     if "remove-btn" in trigger_id:
-        # Extract index from pattern-matching id
         btn_id = json.loads(trigger_id.split(".")[0])
         idx = btn_id["index"]
         if 0 <= idx < len(current_data):
             current_data.pop(idx)
-        return current_data
+            current_data = _equal_rebalance(current_data)
+        return current_data, no_update
 
-    # Handle add
-    if "confirm-add-btn" in trigger_id:
-        if new_ticker and new_weight and float(new_weight) > 0:
-            # Don't add duplicates
-            existing = {h["ticker"] for h in current_data}
-            if new_ticker not in existing:
-                current_data.append({"ticker": new_ticker, "weight": float(new_weight)})
-        return current_data
+    # ── Edit weight ────────────────────────────────────────────
+    if "weight-input" in trigger_id:
+        btn_id = json.loads(trigger_id.split(".")[0])
+        idx = btn_id["index"]
+        if 0 <= idx < len(current_data):
+            val = weight_values[idx]
+            if val is not None and val >= 0:
+                current_data[idx]["weight"] = round(float(val), 1)
+        return current_data, no_update
 
-    return no_update
+    return no_update, no_update
 
 
 @app.callback(
@@ -180,7 +210,7 @@ def update_portfolio_store(add_clicks, remove_clicks, new_ticker, new_weight, cu
     Input("portfolio-store", "data"),
 )
 def render_holdings(holdings):
-    """Render the holdings list from the store."""
+    """Render the holdings list with inline editable weights."""
     if not holdings:
         return html.P("No holdings", style={"color": "#4a5060", "fontSize": "0.8rem", "textAlign": "center"})
 
@@ -189,6 +219,7 @@ def render_holdings(holdings):
         color = charts.PALETTE[(i + 1) % len(charts.PALETTE)]
         row = html.Div(
             [
+                # Color accent
                 html.Div(
                     "",
                     style={
@@ -200,8 +231,30 @@ def render_holdings(holdings):
                         "flexShrink": "0",
                     },
                 ),
+                # Ticker
                 html.Span(h["ticker"], className="holding-ticker"),
-                html.Span(f"{h['weight']}%", className="holding-weight"),
+                # Editable weight input
+                dbc.Input(
+                    id={"type": "weight-input", "index": i},
+                    type="number",
+                    value=h["weight"],
+                    min=0, max=100, step=0.1,
+                    size="sm",
+                    debounce=True,
+                    style={
+                        "width": "52px",
+                        "backgroundColor": "transparent",
+                        "border": "1px solid rgba(255,255,255,0.06)",
+                        "color": "#8a92a0",
+                        "textAlign": "right",
+                        "fontSize": "0.78rem",
+                        "padding": "2px 6px",
+                        "borderRadius": "6px",
+                        "marginRight": "2px",
+                    },
+                ),
+                html.Span("%", style={"color": "#4a5060", "fontSize": "0.72rem", "marginRight": "8px"}),
+                # Remove button
                 html.Button(
                     "×",
                     id={"type": "remove-btn", "index": i},
@@ -213,32 +266,6 @@ def render_holdings(holdings):
         )
         rows.append(row)
     return rows
-
-
-@app.callback(
-    Output("add-stock-form", "style"),
-    Input("add-stock-btn", "n_clicks"),
-    State("add-stock-form", "style"),
-    prevent_initial_call=True,
-)
-def toggle_add_form(n_clicks, current_style):
-    """Toggle visibility of the add-stock form."""
-    if current_style and current_style.get("display") == "none":
-        return {"display": "block"}
-    return {"display": "none"}
-
-
-@app.callback(
-    [
-        Output("new-ticker-dropdown", "value"),
-        Output("new-weight-input", "value"),
-    ],
-    Input("portfolio-store", "data"),
-    prevent_initial_call=True,
-)
-def clear_add_form(_):
-    """Clear the add form after a stock is added."""
-    return None, None
 
 
 # ─── Callbacks: Dashboard update ─────────────────────────────────────

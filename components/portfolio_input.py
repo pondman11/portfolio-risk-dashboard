@@ -1,8 +1,9 @@
 """
 portfolio_input.py — Sidebar portfolio construction panel.
 
-Design: Clean, minimal. Default holdings shown as removable pills.
-"+ Add Stock" button reveals a dropdown + weight input inline.
+Design: Holdings as editable rows with inline weight inputs.
+Add stock = dropdown only, auto-rebalances equally.
+Remove = ×, auto-rebalances remaining equally.
 """
 
 import dash_bootstrap_components as dbc
@@ -17,7 +18,7 @@ DEFAULT_WEIGHTS[DEFAULT_TICKERS[0]] += _remainder
 
 
 def build_sidebar() -> html.Div:
-    """Sidebar with holdings list, add-stock form, period selector, and recalc button."""
+    """Sidebar with holdings list, add-stock dropdown, period selector, recalc button."""
 
     return html.Div(
         [
@@ -54,76 +55,20 @@ def build_sidebar() -> html.Div:
             # Dynamic holdings list (populated by callback)
             html.Div(id="holdings-list"),
 
-            # Add stock button
-            html.Button(
-                "+ Add Stock",
-                id="add-stock-btn",
-                className="add-stock-btn w-100 mt-1 mb-2",
-                n_clicks=0,
-            ),
-
-            # Add stock form (hidden by default)
+            # Add stock — just a dropdown, adding auto-rebalances
             html.Div(
-                id="add-stock-form",
-                children=[
-                    dcc.Dropdown(
-                        id="new-ticker-dropdown",
-                        options=[{"label": t, "value": t} for t in AVAILABLE_TICKERS],
-                        placeholder="Select ticker…",
-                        style={"marginBottom": "6px"},
-                        className="dash-dropdown",
-                    ),
-                    dbc.InputGroup(
-                        [
-                            dbc.Input(
-                                id="new-weight-input",
-                                type="number",
-                                placeholder="Weight",
-                                min=0, max=100, step=0.1,
-                                size="sm",
-                                style={
-                                    "backgroundColor": "#1a1d23",
-                                    "border": "1px solid #2a2d35",
-                                    "color": "#e0e4ea",
-                                    "borderRadius": "8px 0 0 8px",
-                                    "fontSize": "0.8rem",
-                                },
-                            ),
-                            dbc.InputGroupText(
-                                "%",
-                                style={
-                                    "backgroundColor": "#1a1d23",
-                                    "border": "1px solid #2a2d35",
-                                    "color": "#5a6270",
-                                    "borderRadius": "0 8px 8px 0",
-                                    "fontSize": "0.8rem",
-                                },
-                            ),
-                        ],
-                        size="sm",
-                        className="mb-2",
-                    ),
-                    dbc.Button(
-                        "Add",
-                        id="confirm-add-btn",
-                        size="sm",
-                        className="w-100",
-                        style={
-                            "backgroundColor": "rgba(0,212,170,0.15)",
-                            "border": "1px solid rgba(0,212,170,0.3)",
-                            "color": "#00d4aa",
-                            "borderRadius": "8px",
-                            "fontSize": "0.8rem",
-                            "fontWeight": "500",
-                        },
-                        n_clicks=0,
-                    ),
-                ],
-                style={"display": "none"},
+                dcc.Dropdown(
+                    id="add-ticker-dropdown",
+                    options=[{"label": t, "value": t} for t in AVAILABLE_TICKERS],
+                    placeholder="+ Add stock…",
+                    className="dash-dropdown",
+                    value=None,
+                ),
+                className="mt-2 mb-2",
             ),
 
             # Weight validation
-            html.Div(id="weight-validation", className="mt-2 mb-3"),
+            html.Div(id="weight-validation", className="mb-3"),
 
             # ── Lookback period ───────────────────────────────
             html.Label(
@@ -136,20 +81,24 @@ def build_sidebar() -> html.Div:
                 },
                 className="mb-2",
             ),
-            dbc.RadioItems(
-                id="period-select",
-                options=[{"label": k, "value": k} for k in PERIOD_MAP],
-                value="3Y",
-                inline=True,
-                className="mb-4 period-btn",
-                input_class_name="btn-check",
-                label_class_name="btn btn-outline-secondary btn-sm me-1",
-                label_checked_class_name="btn btn-sm me-1",
-                label_checked_style={
-                    "backgroundColor": "#00d4aa",
-                    "borderColor": "#00d4aa",
-                    "color": "#0b0d10",
-                },
+            html.Div(
+                dbc.RadioItems(
+                    id="period-select",
+                    options=[{"label": k, "value": k} for k in PERIOD_MAP],
+                    value="3Y",
+                    inline=True,
+                    className="period-btn",
+                    input_class_name="btn-check",
+                    label_class_name="btn btn-outline-secondary btn-sm me-1",
+                    label_checked_class_name="btn btn-sm me-1",
+                    label_checked_style={
+                        "backgroundColor": "#00d4aa",
+                        "borderColor": "#00d4aa",
+                        "color": "#0b0d10",
+                    },
+                ),
+                style={"whiteSpace": "nowrap", "display": "flex", "flexWrap": "nowrap"},
+                className="mb-4",
             ),
 
             # Spacer
