@@ -3,7 +3,7 @@ charts.py — All Plotly figure builders.
 
 Design: Minimal, dark, generous whitespace. Data-forward.
 Tooltips use hovermode="x unified" where appropriate.
-Title inside the top margin, legend below title but above plot area.
+Title inside the top margin, legend below chart area.
 """
 
 import plotly.graph_objects as go
@@ -65,8 +65,9 @@ CHART_LAYOUT = dict(
 
 
 def _apply_layout(fig, **kwargs):
-    """Apply common layout to a figure."""
-    fig.update_layout(**CHART_LAYOUT, **kwargs)
+    """Apply common layout to a figure. kwargs override CHART_LAYOUT defaults."""
+    merged = {**CHART_LAYOUT, **kwargs}
+    fig.update_layout(**merged)
     return fig
 
 
