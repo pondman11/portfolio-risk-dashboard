@@ -42,29 +42,6 @@ server = app.server  # for gunicorn / deployment
 
 # ─── Custom CSS ──────────────────────────────────────────────────────
 
-GLOBAL_CSS = """
-body {
-    background-color: #0d0f13 !important;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
-}
-.card { border-radius: 8px !important; }
-.dash-graph .js-plotly-plot { border-radius: 8px; }
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: #12141a; }
-::-webkit-scrollbar-thumb { background: #2a2d35; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #3a3d45; }
-
-/* Section headers */
-.section-header {
-    color: #636e72;
-    font-size: 0.7rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    font-weight: 600;
-    margin-bottom: 12px;
-    padding-left: 4px;
-}
-"""
 
 
 # ─── Layout ──────────────────────────────────────────────────────────
@@ -84,8 +61,7 @@ def _chart_card(children, **kwargs):
 
 app.layout = html.Div(
     [
-        # Inject custom CSS
-        html.Style(GLOBAL_CSS),
+        
 
         dbc.Row(
             [
