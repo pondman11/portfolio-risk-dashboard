@@ -14,6 +14,15 @@ _cache: dict[str, pd.DataFrame] = {}
 DEFAULT_TICKERS = ["AAPL", "MSFT", "JNJ", "JPM", "XOM"]
 BENCHMARK = "SPY"
 
+# Tickers available in the "Add Stock" dropdown
+AVAILABLE_TICKERS = [
+    "AAPL", "ABBV", "AMZN", "BAC", "BRK-B", "COST", "CRM", "CVX",
+    "DIS", "GOOG", "GS", "HD", "JNJ", "JPM", "KO", "LLY",
+    "MA", "META", "MRK", "MSFT", "NFLX", "NVDA", "PEP", "PFE",
+    "PG", "QCOM", "SCHW", "T", "TSLA", "UNH", "V", "VZ",
+    "WMT", "XOM",
+]
+
 PERIOD_MAP = {
     "1Y": 365,
     "3Y": 365 * 3,

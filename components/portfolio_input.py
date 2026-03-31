@@ -1,139 +1,138 @@
 """
 portfolio_input.py — Sidebar portfolio construction panel.
 
-Design: Clean sidebar with ticker/weight rows, period selector, and a CTA button.
-Minimal chrome, clear labels, instant visual feedback on weight validation.
+Design: Clean, minimal. Default holdings shown as removable pills.
+"+ Add Stock" button reveals a dropdown + weight input inline.
 """
 
 import dash_bootstrap_components as dbc
 from dash import html, dcc
 
-from data_loader import DEFAULT_TICKERS, PERIOD_MAP
+from data_loader import DEFAULT_TICKERS, AVAILABLE_TICKERS, PERIOD_MAP
 
 # Default equal weights
 DEFAULT_WEIGHTS = {t: round(1.0 / len(DEFAULT_TICKERS), 2) for t in DEFAULT_TICKERS}
-# Fix rounding so it sums to 1.0
 _remainder = 1.0 - sum(DEFAULT_WEIGHTS.values())
 DEFAULT_WEIGHTS[DEFAULT_TICKERS[0]] += _remainder
 
 
-def _ticker_row(ticker: str, weight: float, idx: int) -> dbc.Row:
-    """Single ticker + weight input row."""
-    return dbc.Row(
-        [
-            dbc.Col(
-                dbc.Input(
-                    id={"type": "ticker-input", "index": idx},
-                    value=ticker,
-                    placeholder="TICKER",
-                    size="sm",
-                    style={
-                        "backgroundColor": "#1a1d23",
-                        "border": "1px solid #2a2d35",
-                        "color": "#e8eaed",
-                        "fontFamily": "monospace",
-                    },
-                ),
-                width=6,
-            ),
-            dbc.Col(
-                dbc.Input(
-                    id={"type": "weight-input", "index": idx},
-                    type="number",
-                    value=round(weight * 100, 1),
-                    min=0, max=100, step=0.1,
-                    size="sm",
-                    style={
-                        "backgroundColor": "#1a1d23",
-                        "border": "1px solid #2a2d35",
-                        "color": "#e8eaed",
-                        "textAlign": "right",
-                    },
-                ),
-                width=4,
-            ),
-            dbc.Col(
-                html.Span("%", className="text-muted", style={"lineHeight": "31px"}),
-                width=2,
-                className="ps-0",
-            ),
-        ],
-        className="g-2 mb-2",
-    )
-
-
 def build_sidebar() -> html.Div:
-    """
-    Build the sidebar portfolio construction panel.
-
-    Contains: ticker/weight inputs, lookback selector, recalculate button,
-    and a weight validation badge.
-    """
-    ticker_rows = [
-        _ticker_row(t, w, i)
-        for i, (t, w) in enumerate(DEFAULT_WEIGHTS.items())
-    ]
-
-    # Extra empty rows for adding tickers
-    for i in range(len(DEFAULT_WEIGHTS), 10):
-        ticker_rows.append(_ticker_row("", 0, i))
+    """Sidebar with holdings list, add-stock form, period selector, and recalc button."""
 
     return html.Div(
         [
-            # Logo / title
+            # ── Logo ──────────────────────────────────────────
             html.Div(
                 [
                     html.H4(
-                        "⚡ Portfolio Risk",
+                        "Portfolio Risk",
                         className="mb-0",
-                        style={"color": "#e8eaed", "fontWeight": "700"},
+                        style={"color": "#e8eaed", "fontWeight": "700", "fontSize": "1.15rem"},
                     ),
                     html.P(
-                        "Analytics Dashboard",
-                        className="text-muted mb-0",
-                        style={"fontSize": "0.8rem"},
+                        "analytics",
+                        className="mb-0",
+                        style={"fontSize": "0.72rem", "color": "#4a5060", "letterSpacing": "0.15em"},
                     ),
                 ],
                 className="mb-4 pb-3",
-                style={"borderBottom": "1px solid #2a2d35"},
+                style={"borderBottom": "1px solid rgba(255,255,255,0.05)"},
             ),
 
-            # Section label
+            # ── Holdings section ──────────────────────────────
             html.Label(
                 "HOLDINGS",
                 style={
-                    "fontSize": "0.7rem",
-                    "color": "#636e72",
-                    "letterSpacing": "0.1em",
-                    "textTransform": "uppercase",
+                    "fontSize": "0.65rem",
+                    "color": "#4a5060",
+                    "letterSpacing": "0.12em",
+                    "fontWeight": "600",
                 },
                 className="mb-2",
             ),
 
-            # Column headers
-            dbc.Row(
-                [
-                    dbc.Col(html.Small("Ticker", className="text-muted"), width=6),
-                    dbc.Col(html.Small("Weight", className="text-muted"), width=4),
-                    dbc.Col(width=2),
-                ],
-                className="g-2 mb-1",
+            # Dynamic holdings list (populated by callback)
+            html.Div(id="holdings-list"),
+
+            # Add stock button
+            html.Button(
+                "+ Add Stock",
+                id="add-stock-btn",
+                className="add-stock-btn w-100 mt-1 mb-2",
+                n_clicks=0,
             ),
 
-            # Ticker rows
-            html.Div(ticker_rows, style={"maxHeight": "360px", "overflowY": "auto"}),
+            # Add stock form (hidden by default)
+            html.Div(
+                id="add-stock-form",
+                children=[
+                    dcc.Dropdown(
+                        id="new-ticker-dropdown",
+                        options=[{"label": t, "value": t} for t in AVAILABLE_TICKERS],
+                        placeholder="Select ticker…",
+                        style={"marginBottom": "6px"},
+                        className="dash-dropdown",
+                    ),
+                    dbc.InputGroup(
+                        [
+                            dbc.Input(
+                                id="new-weight-input",
+                                type="number",
+                                placeholder="Weight",
+                                min=0, max=100, step=0.1,
+                                size="sm",
+                                style={
+                                    "backgroundColor": "#1a1d23",
+                                    "border": "1px solid #2a2d35",
+                                    "color": "#e0e4ea",
+                                    "borderRadius": "8px 0 0 8px",
+                                    "fontSize": "0.8rem",
+                                },
+                            ),
+                            dbc.InputGroupText(
+                                "%",
+                                style={
+                                    "backgroundColor": "#1a1d23",
+                                    "border": "1px solid #2a2d35",
+                                    "color": "#5a6270",
+                                    "borderRadius": "0 8px 8px 0",
+                                    "fontSize": "0.8rem",
+                                },
+                            ),
+                        ],
+                        size="sm",
+                        className="mb-2",
+                    ),
+                    dbc.Button(
+                        "Add",
+                        id="confirm-add-btn",
+                        size="sm",
+                        className="w-100",
+                        style={
+                            "backgroundColor": "rgba(0,212,170,0.15)",
+                            "border": "1px solid rgba(0,212,170,0.3)",
+                            "color": "#00d4aa",
+                            "borderRadius": "8px",
+                            "fontSize": "0.8rem",
+                            "fontWeight": "500",
+                        },
+                        n_clicks=0,
+                    ),
+                ],
+                style={"display": "none"},
+            ),
 
             # Weight validation
             html.Div(id="weight-validation", className="mt-2 mb-3"),
 
-            # Lookback period
+            # ── Lookback period ───────────────────────────────
             html.Label(
-                "LOOKBACK",
+                "PERIOD",
                 style={
-                    "fontSize": "0.7rem",
-                    "color": "#636e72",
-                    "letterSpacing": "0.1em",
-                    "textTransform": "uppercase",
+                    "fontSize": "0.65rem",
+                    "color": "#4a5060",
+                    "letterSpacing": "0.12em",
+                    "fontWeight": "600",
                 },
                 className="mb-2",
             ),
@@ -142,32 +141,31 @@ def build_sidebar() -> html.Div:
                 options=[{"label": k, "value": k} for k in PERIOD_MAP],
                 value="3Y",
                 inline=True,
-                className="mb-4",
+                className="mb-4 period-btn",
                 input_class_name="btn-check",
                 label_class_name="btn btn-outline-secondary btn-sm me-1",
                 label_checked_class_name="btn btn-sm me-1",
-                label_checked_style={"backgroundColor": "#00d4aa", "borderColor": "#00d4aa", "color": "#12141a"},
+                label_checked_style={
+                    "backgroundColor": "#00d4aa",
+                    "borderColor": "#00d4aa",
+                    "color": "#0b0d10",
+                },
             ),
 
-            # Recalculate button
+            # Spacer
+            html.Div(style={"flex": "1"}),
+
+            # ── Recalculate ───────────────────────────────────
             dbc.Button(
                 "Recalculate",
                 id="recalc-btn",
-                color="light",
-                className="w-100",
+                className="w-100 recalc-btn",
                 size="lg",
-                style={
-                    "backgroundColor": "#00d4aa",
-                    "border": "none",
-                    "color": "#12141a",
-                    "fontWeight": "600",
-                    "letterSpacing": "0.02em",
-                },
             ),
         ],
+        className="sidebar d-flex flex-column",
         style={
-            "backgroundColor": "#12141a",
-            "padding": "24px",
+            "padding": "24px 20px",
             "height": "100vh",
             "position": "sticky",
             "top": 0,
