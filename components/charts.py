@@ -1,308 +1,360 @@
 """
-charts.py — Plotly chart-building functions.
+charts.py — All Plotly figure builders.
 
-Each function returns a plotly.graph_objects.Figure ready for a dcc.Graph.
-All charts use the "plotly_dark" template for visual consistency.
+Design principles:
+- Consistent dark theme (plotly_dark base, customized)
+- Clean, minimal gridlines — data speaks
+- Cohesive color palette across all charts
+- Generous margins, readable axis labels
+- Smooth lines, no chart junk
 """
 
 import plotly.graph_objects as go
 import plotly.express as px
-import pandas as pd
 import numpy as np
+import pandas as pd
+from scipy.stats import norm
 
-from risk_metrics import (
-    drawdown_series,
-    max_drawdown_window,
-    rolling_volatility,
-    annualised_return,
-    annualised_vol,
-    sharpe_ratio,
-    parametric_var,
-    historical_var,
+# ─── Color palette ───────────────────────────────────────────────────────
+PALETTE = [
+    "#00d4aa",  # teal-green (portfolio)
+    "#6c5ce7",  # purple
+    "#ffd93d",  # gold
+    "#ff6b6b",  # coral-red
+    "#74b9ff",  # sky-blue
+    "#fd79a8",  # pink
+    "#a29bfe",  # lavender
+    "#00cec9",  # cyan
+    "#ff9f43",  # orange
+    "#55efc4",  # mint
+]
+
+BENCHMARK_COLOR = "#636e72"  # muted grey for benchmark
+BG_COLOR = "#12141a"
+PAPER_COLOR = "#12141a"
+GRID_COLOR = "#1e2028"
+TEXT_COLOR = "#b2b9c4"
+
+CHART_LAYOUT = dict(
+    template="plotly_dark",
+    paper_bgcolor=PAPER_COLOR,
+    plot_bgcolor=BG_COLOR,
+    font=dict(family="Inter, -apple-system, sans-serif", color=TEXT_COLOR, size=12),
+    margin=dict(l=50, r=30, t=50, b=40),
+    legend=dict(
+        orientation="h",
+        yanchor="bottom",
+        y=1.02,
+        xanchor="left",
+        x=0,
+        font=dict(size=11),
+        bgcolor="rgba(0,0,0,0)",
+    ),
+    xaxis=dict(gridcolor=GRID_COLOR, showgrid=False, zeroline=False),
+    yaxis=dict(gridcolor=GRID_COLOR, gridwidth=1, zeroline=False),
+    hoverlabel=dict(bgcolor="#1a1d23", font_size=12, bordercolor="rgba(0,0,0,0)"),
 )
-from data_loader import BENCHMARK
 
-# Consistent colour palette.
-PALETTE = px.colors.qualitative.Plotly
-TEMPLATE = "plotly_dark"
 
+def _apply_layout(fig, **kwargs):
+    """Apply common layout to a figure."""
+    fig.update_layout(**CHART_LAYOUT, **kwargs)
+    return fig
+
+
+# ─── Cumulative Returns ────────────────────────────────────────────────
 
 def cumulative_returns_chart(
-    returns: pd.DataFrame, port_returns: pd.Series
+    returns: pd.DataFrame,
+    portfolio_returns: pd.Series,
+    benchmark_col: str = "SPY",
 ) -> go.Figure:
     """
-    Line chart: cumulative return of each holding, the portfolio, and
-    the benchmark over the selected window.
-    """
-    cum = returns.cumsum().apply(np.exp) - 1  # log cumret → simple cumret
-    port_cum = port_returns.cumsum().apply(np.exp) - 1
+    Hero chart: cumulative performance of portfolio vs benchmark vs holdings.
 
+    Portfolio line is thick and prominent. Holdings are thin and translucent.
+    Benchmark is dashed grey.
+    """
     fig = go.Figure()
 
-    # Individual holdings (muted lines).
+    cum = (1 + returns).cumprod() - 1
+    port_cum = (1 + portfolio_returns).cumprod() - 1
+
+    # Individual holdings — thin, translucent
     for i, col in enumerate(returns.columns):
-        if col == BENCHMARK:
+        if col == benchmark_col:
             continue
-        fig.add_trace(
-            go.Scatter(
-                x=cum.index,
-                y=cum[col],
-                name=col,
-                mode="lines",
-                line=dict(width=1, color=PALETTE[i % len(PALETTE)]),
-                opacity=0.5,
-            )
-        )
-
-    # Benchmark — dashed.
-    if BENCHMARK in cum.columns:
-        fig.add_trace(
-            go.Scatter(
-                x=cum.index,
-                y=cum[BENCHMARK],
-                name=BENCHMARK,
-                mode="lines",
-                line=dict(width=2, dash="dash", color="gray"),
-            )
-        )
-
-    # Portfolio — bold.
-    fig.add_trace(
-        go.Scatter(
-            x=port_cum.index,
-            y=port_cum,
-            name="Portfolio",
+        fig.add_trace(go.Scatter(
+            x=cum.index, y=cum[col],
+            name=col,
             mode="lines",
-            line=dict(width=3, color="#00cc96"),
-        )
-    )
+            line=dict(width=1.5, color=PALETTE[i % len(PALETTE)]),
+            opacity=0.4,
+            hovertemplate=f"{col}: %{{y:.1%}}<extra></extra>",
+        ))
+
+    # Benchmark — dashed grey
+    if benchmark_col in cum.columns:
+        fig.add_trace(go.Scatter(
+            x=cum.index, y=cum[benchmark_col],
+            name=benchmark_col,
+            mode="lines",
+            line=dict(width=2, color=BENCHMARK_COLOR, dash="dot"),
+            hovertemplate=f"{benchmark_col}: %{{y:.1%}}<extra></extra>",
+        ))
+
+    # Portfolio — hero line, thick
+    fig.add_trace(go.Scatter(
+        x=port_cum.index, y=port_cum.values,
+        name="Portfolio",
+        mode="lines",
+        line=dict(width=3, color=PALETTE[0]),
+        hovertemplate="Portfolio: %{y:.1%}<extra></extra>",
+    ))
 
     fig.update_layout(
-        template=TEMPLATE,
-        title="Cumulative Returns",
         yaxis_tickformat=".0%",
-        legend=dict(orientation="h", y=-0.15),
-        margin=dict(t=40, b=60),
+        title=dict(text="Cumulative Returns", font=dict(size=16, color="#e8eaed")),
+        height=400,
     )
-    return fig
+    return _apply_layout(fig)
 
 
-def correlation_heatmap(corr: pd.DataFrame) -> go.Figure:
-    """Heatmap of pairwise return correlations."""
-    fig = go.Figure(
-        go.Heatmap(
-            z=corr.values,
-            x=corr.columns.tolist(),
-            y=corr.index.tolist(),
-            colorscale="RdBu_r",
-            zmin=-1,
-            zmax=1,
-            text=corr.round(2).values,
-            texttemplate="%{text}",
-        )
-    )
+# ─── Correlation Heatmap ──────────────────────────────────────────────
+
+def correlation_heatmap(corr_matrix: pd.DataFrame) -> go.Figure:
+    """
+    Clean heatmap with annotated values.
+    Uses a teal-to-coral diverging scale centered on 0.
+    """
+    fig = go.Figure(data=go.Heatmap(
+        z=corr_matrix.values,
+        x=corr_matrix.columns.tolist(),
+        y=corr_matrix.index.tolist(),
+        colorscale=[
+            [0.0, "#ff6b6b"],
+            [0.5, "#1a1d23"],
+            [1.0, "#00d4aa"],
+        ],
+        zmin=-1, zmax=1,
+        text=np.round(corr_matrix.values, 2),
+        texttemplate="%{text}",
+        textfont=dict(size=12, color="#e8eaed"),
+        hovertemplate="%{x} × %{y}: %{z:.2f}<extra></extra>",
+        colorbar=dict(
+            tickvals=[-1, -0.5, 0, 0.5, 1],
+            ticktext=["-1.0", "-0.5", "0", "0.5", "1.0"],
+            len=0.8,
+        ),
+    ))
+
     fig.update_layout(
-        template=TEMPLATE,
-        title="Correlation Matrix",
-        margin=dict(t=40, b=20),
+        title=dict(text="Return Correlations", font=dict(size=16, color="#e8eaed")),
+        height=400,
+        xaxis=dict(side="bottom"),
+        yaxis=dict(autorange="reversed"),
     )
-    return fig
+    return _apply_layout(fig)
 
+
+# ─── Rolling Volatility ──────────────────────────────────────────────
 
 def rolling_vol_chart(
-    port_returns: pd.Series, bench_returns: pd.Series
+    portfolio_vol_30: pd.Series,
+    portfolio_vol_90: pd.Series,
+    benchmark_vol_30: pd.Series | None = None,
 ) -> go.Figure:
-    """Rolling 30-day and 90-day annualised volatility for portfolio and benchmark."""
+    """
+    Rolling annualised volatility — 30d and 90d windows.
+    Fill area under the 30d line for visual weight.
+    """
     fig = go.Figure()
 
-    for window, dash in [(30, "solid"), (90, "dot")]:
-        rv_port = rolling_volatility(port_returns, window)
-        rv_bench = rolling_volatility(bench_returns, window)
-        fig.add_trace(
-            go.Scatter(
-                x=rv_port.index,
-                y=rv_port,
-                name=f"Portfolio {window}d",
-                mode="lines",
-                line=dict(width=2, dash=dash, color="#00cc96"),
-            )
-        )
-        fig.add_trace(
-            go.Scatter(
-                x=rv_bench.index,
-                y=rv_bench,
-                name=f"{BENCHMARK} {window}d",
-                mode="lines",
-                line=dict(width=2, dash=dash, color="gray"),
-            )
+    # 30-day portfolio vol — filled area
+    fig.add_trace(go.Scatter(
+        x=portfolio_vol_30.index, y=portfolio_vol_30.values,
+        name="Portfolio 30d",
+        mode="lines",
+        line=dict(width=2, color=PALETTE[0]),
+        fill="tozeroy",
+        fillcolor="rgba(0,212,170,0.1)",
+        hovertemplate="30d vol: %{y:.1%}<extra></extra>",
+    ))
+
+    # 90-day portfolio vol
+    fig.add_trace(go.Scatter(
+        x=portfolio_vol_90.index, y=portfolio_vol_90.values,
+        name="Portfolio 90d",
+        mode="lines",
+        line=dict(width=2, color=PALETTE[1]),
+        hovertemplate="90d vol: %{y:.1%}<extra></extra>",
+    ))
+
+    # Benchmark 30-day
+    if benchmark_vol_30 is not None:
+        fig.add_trace(go.Scatter(
+            x=benchmark_vol_30.index, y=benchmark_vol_30.values,
+            name="SPY 30d",
+            mode="lines",
+            line=dict(width=1.5, color=BENCHMARK_COLOR, dash="dot"),
+            hovertemplate="SPY 30d vol: %{y:.1%}<extra></extra>",
+        ))
+
+    fig.update_layout(
+        yaxis_tickformat=".0%",
+        title=dict(text="Rolling Volatility", font=dict(size=16, color="#e8eaed")),
+        height=380,
+    )
+    return _apply_layout(fig)
+
+
+# ─── VaR Histogram ──────────────────────────────────────────────────
+
+def var_histogram(
+    daily_returns: pd.Series,
+    var_95: float,
+    var_99: float,
+) -> go.Figure:
+    """
+    Histogram of daily portfolio returns with VaR thresholds as vertical lines.
+    Left tail is highlighted red for visual impact.
+    """
+    fig = go.Figure()
+
+    fig.add_trace(go.Histogram(
+        x=daily_returns.values,
+        nbinsx=80,
+        marker_color=PALETTE[0],
+        opacity=0.7,
+        name="Daily Returns",
+        hovertemplate="Return: %{x:.2%}<br>Count: %{y}<extra></extra>",
+    ))
+
+    # VaR lines
+    for val, label, color in [
+        (-var_95, "95% VaR", "#ff9f43"),
+        (-var_99, "99% VaR", "#ee5a24"),
+    ]:
+        fig.add_vline(
+            x=val, line_width=2, line_dash="dash", line_color=color,
+            annotation_text=f" {label}: {abs(val):.2%}",
+            annotation_position="top left",
+            annotation_font=dict(size=11, color=color),
         )
 
     fig.update_layout(
-        template=TEMPLATE,
-        title="Rolling Volatility",
-        yaxis_tickformat=".0%",
-        legend=dict(orientation="h", y=-0.15),
-        margin=dict(t=40, b=60),
+        title=dict(text="Return Distribution & VaR", font=dict(size=16, color="#e8eaed")),
+        xaxis_tickformat=".1%",
+        xaxis_title="Daily Return",
+        yaxis_title="Frequency",
+        height=380,
     )
-    return fig
+    return _apply_layout(fig)
 
+
+# ─── Risk-Return Scatter ─────────────────────────────────────────────
 
 def risk_return_scatter(
-    returns: pd.DataFrame, weights: dict[str, float]
+    ticker_data: list[dict],
+    portfolio_point: dict,
 ) -> go.Figure:
     """
-    Scatter plot: annualised return vs. vol per holding. Portfolio shown
-    as a highlighted diamond. Sharpe ratio in hover text.
+    Scatter: annualised vol (x) vs annualised return (y) per holding.
+    Portfolio is a large highlighted marker. Sharpe on hover.
+
+    ticker_data: list of {"ticker", "vol", "return", "sharpe"}
+    portfolio_point: {"vol", "return", "sharpe"}
     """
-    data = []
-    for col in returns.columns:
-        ar = annualised_return(returns[col])
-        av = annualised_vol(returns[col])
-        sr = sharpe_ratio(returns[col])
-        data.append(dict(ticker=col, ret=ar, vol=av, sharpe=sr))
-
     fig = go.Figure()
-    for d in data:
-        fig.add_trace(
-            go.Scatter(
-                x=[d["vol"]],
-                y=[d["ret"]],
-                mode="markers+text",
-                marker=dict(size=10),
-                text=[d["ticker"]],
-                textposition="top center",
-                hovertemplate=(
-                    f"<b>{d['ticker']}</b><br>"
-                    f"Return: {d['ret']:.1%}<br>"
-                    f"Vol: {d['vol']:.1%}<br>"
-                    f"Sharpe: {d['sharpe']:.2f}<extra></extra>"
-                ),
-                showlegend=False,
-            )
-        )
 
-    # Portfolio point.
-    from risk_metrics import portfolio_returns as _pr
-
-    port = _pr(returns, weights)
-    par = annualised_return(port)
-    pav = annualised_vol(port)
-    psr = sharpe_ratio(port)
-    fig.add_trace(
-        go.Scatter(
-            x=[pav],
-            y=[par],
+    # Individual holdings
+    for i, d in enumerate(ticker_data):
+        fig.add_trace(go.Scatter(
+            x=[d["vol"]], y=[d["return"]],
+            name=d["ticker"],
             mode="markers+text",
-            marker=dict(size=16, symbol="diamond", color="#00cc96"),
-            text=["Portfolio"],
+            text=[d["ticker"]],
             textposition="top center",
+            textfont=dict(size=11, color=PALETTE[i % len(PALETTE)]),
+            marker=dict(size=12, color=PALETTE[i % len(PALETTE)], opacity=0.8),
             hovertemplate=(
-                f"<b>Portfolio</b><br>"
-                f"Return: {par:.1%}<br>"
-                f"Vol: {pav:.1%}<br>"
-                f"Sharpe: {psr:.2f}<extra></extra>"
+                f"<b>{d['ticker']}</b><br>"
+                f"Return: {d['return']:.1%}<br>"
+                f"Vol: {d['vol']:.1%}<br>"
+                f"Sharpe: {d['sharpe']:.2f}<extra></extra>"
             ),
-            showlegend=False,
-        )
-    )
+        ))
+
+    # Portfolio — highlighted
+    fig.add_trace(go.Scatter(
+        x=[portfolio_point["vol"]], y=[portfolio_point["return"]],
+        name="Portfolio",
+        mode="markers+text",
+        text=["Portfolio"],
+        textposition="bottom center",
+        textfont=dict(size=12, color="#fff", weight="bold"),
+        marker=dict(
+            size=18, color=PALETTE[0],
+            line=dict(width=3, color="#fff"),
+            symbol="diamond",
+        ),
+        hovertemplate=(
+            f"<b>Portfolio</b><br>"
+            f"Return: {portfolio_point['return']:.1%}<br>"
+            f"Vol: {portfolio_point['vol']:.1%}<br>"
+            f"Sharpe: {portfolio_point['sharpe']:.2f}<extra></extra>"
+        ),
+    ))
 
     fig.update_layout(
-        template=TEMPLATE,
-        title="Risk–Return",
+        title=dict(text="Risk vs Return", font=dict(size=16, color="#e8eaed")),
         xaxis_title="Annualised Volatility",
         yaxis_title="Annualised Return",
         xaxis_tickformat=".0%",
         yaxis_tickformat=".0%",
-        margin=dict(t=40, b=40),
+        height=380,
+        showlegend=False,
     )
-    return fig
+    return _apply_layout(fig)
 
 
-def return_histogram(port_returns: pd.Series) -> go.Figure:
+# ─── Drawdown Chart ──────────────────────────────────────────────────
+
+def drawdown_chart(
+    dd_series: pd.Series,
+    max_dd_window: tuple | None = None,
+) -> go.Figure:
     """
-    Histogram of daily portfolio returns with VaR threshold lines at
-    95% and 99% (both parametric and historical).
+    Drawdown curve with the worst drawdown period highlighted.
+    Uses red fill for visual gravity.
     """
     fig = go.Figure()
-    fig.add_trace(
-        go.Histogram(
-            x=port_returns,
-            nbinsx=80,
-            marker_color="#636efa",
-            opacity=0.75,
-            name="Daily Returns",
-        )
-    )
 
-    # VaR lines.
-    var95_p = -parametric_var(port_returns, 0.95)
-    var99_p = -parametric_var(port_returns, 0.99)
-    var95_h = -historical_var(port_returns, 0.95)
-    var99_h = -historical_var(port_returns, 0.99)
+    fig.add_trace(go.Scatter(
+        x=dd_series.index, y=dd_series.values,
+        name="Drawdown",
+        mode="lines",
+        line=dict(width=1.5, color="#ff6b6b"),
+        fill="tozeroy",
+        fillcolor="rgba(255,107,107,0.15)",
+        hovertemplate="Drawdown: %{y:.1%}<extra></extra>",
+    ))
 
-    for val, label, color, dash in [
-        (var95_p, "Param 95%", "#EF553B", "solid"),
-        (var99_p, "Param 99%", "#EF553B", "dash"),
-        (var95_h, "Hist 95%", "#FFA15A", "solid"),
-        (var99_h, "Hist 99%", "#FFA15A", "dash"),
-    ]:
-        fig.add_vline(
-            x=val,
-            line_dash=dash,
-            line_color=color,
-            annotation_text=label,
-            annotation_font_color=color,
-        )
-
-    fig.update_layout(
-        template=TEMPLATE,
-        title="Daily Return Distribution & VaR",
-        xaxis_title="Log Return",
-        xaxis_tickformat=".1%",
-        margin=dict(t=40, b=40),
-    )
-    return fig
-
-
-def drawdown_chart(port_returns: pd.Series) -> go.Figure:
-    """
-    Drawdown curve over time.  The worst drawdown window is highlighted
-    with a shaded rectangle.
-    """
-    cum = port_returns.cumsum().apply(np.exp) - 1
-    dd = drawdown_series(cum)
-
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=dd.index,
-            y=dd,
-            fill="tozeroy",
-            mode="lines",
-            line=dict(color="#EF553B", width=1),
-            name="Drawdown",
-        )
-    )
-
-    # Highlight the max-drawdown window.
-    try:
-        start, trough, end = max_drawdown_window(cum)
+    # Highlight worst drawdown window
+    if max_dd_window is not None:
+        start, trough, end = max_dd_window
         fig.add_vrect(
-            x0=start,
-            x1=end,
-            fillcolor="red",
-            opacity=0.15,
+            x0=start, x1=end,
+            fillcolor="rgba(238,90,36,0.15)",
             line_width=0,
             annotation_text="Max DD",
             annotation_position="top left",
+            annotation_font=dict(size=11, color="#ee5a24"),
         )
-    except Exception:
-        pass  # graceful degradation
 
     fig.update_layout(
-        template=TEMPLATE,
-        title="Portfolio Drawdown",
+        title=dict(text="Portfolio Drawdown", font=dict(size=16, color="#e8eaed")),
         yaxis_tickformat=".0%",
-        margin=dict(t=40, b=20),
+        height=380,
     )
-    return fig
+    return _apply_layout(fig)

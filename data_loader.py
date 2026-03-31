@@ -1,84 +1,68 @@
 """
-data_loader.py — Yahoo Finance data retrieval and caching.
+data_loader.py — Fetch and cache historical price data from Yahoo Finance.
 
-Pulls adjusted close prices via yfinance and caches them in a module-level
-dictionary so repeated Dash callbacks don't trigger redundant API calls.
+Uses a module-level dict to avoid re-fetching on every callback.
 """
 
 import yfinance as yf
 import pandas as pd
 from datetime import datetime, timedelta
 
-# ---------------------------------------------------------------------------
-# Module-level cache: keyed by a frozenset of (tickers, lookback_years) so
-# the same request is never fetched twice in a single server process.
-# ---------------------------------------------------------------------------
+# Module-level cache: key = frozenset(tickers) + period → DataFrame
 _cache: dict[str, pd.DataFrame] = {}
 
-# Default universe — SPY serves double duty as a holding *and* benchmark.
-DEFAULT_TICKERS = ["AAPL", "MSFT", "JNJ", "JPM", "XOM", "SPY"]
-DEFAULT_LOOKBACK_YEARS = 3
+DEFAULT_TICKERS = ["AAPL", "MSFT", "JNJ", "JPM", "XOM"]
 BENCHMARK = "SPY"
 
-
-def _cache_key(tickers: list[str], lookback_years: int) -> str:
-    """Build a deterministic cache key from tickers + lookback."""
-    return f"{','.join(sorted(tickers))}|{lookback_years}"
+PERIOD_MAP = {
+    "1Y": 365,
+    "3Y": 365 * 3,
+    "5Y": 365 * 5,
+}
 
 
 def fetch_prices(
-    tickers: list[str] | None = None,
-    lookback_years: int = DEFAULT_LOOKBACK_YEARS,
-    force: bool = False,
+    tickers: list[str],
+    period: str = "3Y",
+    include_benchmark: bool = True,
 ) -> pd.DataFrame:
     """
-    Return a DataFrame of adjusted close prices (columns = tickers, index = date).
+    Download adjusted close prices for the given tickers (+ benchmark).
 
-    Parameters
-    ----------
-    tickers : list[str]
-        Symbols to download. Defaults to DEFAULT_TICKERS.
-    lookback_years : int
-        How many years of history to pull. Defaults to 3.
-    force : bool
-        If True, bypass the cache and re-download.
-
-    Returns
-    -------
-    pd.DataFrame
-        Adjusted close prices, forward-filled then back-filled to handle
-        minor gaps (holidays across exchanges).
+    Returns a DataFrame indexed by date with one column per ticker.
+    Results are cached in memory.
     """
-    tickers = tickers or DEFAULT_TICKERS
-    # Always include the benchmark so we can compare against it.
-    if BENCHMARK not in tickers:
-        tickers = tickers + [BENCHMARK]
+    all_tickers = list(tickers)
+    if include_benchmark and BENCHMARK not in all_tickers:
+        all_tickers.append(BENCHMARK)
 
-    key = _cache_key(tickers, lookback_years)
+    cache_key = f"{sorted(all_tickers)}_{period}"
+    if cache_key in _cache:
+        return _cache[cache_key]
 
-    if not force and key in _cache:
-        return _cache[key]
-
+    days = PERIOD_MAP.get(period, 365 * 3)
     end = datetime.today()
-    start = end - timedelta(days=lookback_years * 365)
+    start = end - timedelta(days=days)
 
-    # yfinance returns a MultiIndex DataFrame when >1 ticker is requested.
-    raw = yf.download(
-        tickers,
+    df = yf.download(
+        all_tickers,
         start=start.strftime("%Y-%m-%d"),
         end=end.strftime("%Y-%m-%d"),
-        auto_adjust=True,   # gives adjusted prices directly in "Close"
+        auto_adjust=True,
         progress=False,
     )
 
-    # Extract the Close column(s). For a single ticker yf returns flat cols.
-    if isinstance(raw.columns, pd.MultiIndex):
-        prices = raw["Close"]
+    # yf.download returns MultiIndex columns when >1 ticker
+    if isinstance(df.columns, pd.MultiIndex):
+        prices = df["Close"]
     else:
-        prices = raw[["Close"]].rename(columns={"Close": tickers[0]})
+        prices = df[["Close"]].rename(columns={"Close": all_tickers[0]})
 
-    # Fill minor gaps, drop rows where everything is NaN.
-    prices = prices.ffill().bfill().dropna(how="all")
-
-    _cache[key] = prices
+    prices = prices.dropna()
+    _cache[cache_key] = prices
     return prices
+
+
+def clear_cache():
+    """Clear the in-memory price cache."""
+    _cache.clear()

@@ -1,210 +1,314 @@
 """
-app.py — Dash application entry point, layout, and callbacks.
+app.py — Portfolio Risk Analytics Dashboard
 
-Launches the Portfolio Risk Analytics dashboard on http://localhost:8050.
+Entry point. Layout and callbacks.
+
+NARRATIVE FLOW (top → bottom):
+  1. KPI Cards — instant snapshot of portfolio health
+  2. Cumulative Returns — how is the portfolio performing?
+  3. Rolling Volatility + VaR — how risky is it right now?
+  4. Correlation Heatmap + Risk-Return Scatter — is it diversified?
+  5. Drawdown — what's the worst-case scenario?
+
+Design: Dark theme, sidebar for controls, main area for analysis.
 """
 
-import json
-import numpy as np
-import pandas as pd
-
 import dash
-from dash import html, dcc, callback, Input, Output, State, ALL, ctx
+from dash import html, dcc, Input, Output, State, ALL, callback_context
 import dash_bootstrap_components as dbc
+import pandas as pd
+import numpy as np
 
-# Local modules.
-from data_loader import fetch_prices, BENCHMARK, DEFAULT_TICKERS
-from risk_metrics import (
-    log_returns,
-    portfolio_returns,
-    annualised_return,
-    annualised_vol,
-    sharpe_ratio,
-    parametric_var,
-    historical_var,
-    max_drawdown,
-    correlation_matrix,
-)
-from components.portfolio_input import portfolio_panel, DEFAULT_WEIGHTS
-from components.charts import (
-    cumulative_returns_chart,
-    correlation_heatmap,
-    rolling_vol_chart,
-    risk_return_scatter,
-    return_histogram,
-    drawdown_chart,
-)
-from components.cards import summary_cards
+import data_loader
+import risk_metrics as rm
+from components.portfolio_input import build_sidebar
+from components.cards import build_kpi_row
+from components import charts
 
-# ---------------------------------------------------------------------------
-# App initialisation — DARKLY theme for a sleek dark look.
-# ---------------------------------------------------------------------------
+# ─── App init ────────────────────────────────────────────────────────
+
 app = dash.Dash(
     __name__,
-    external_stylesheets=[dbc.themes.DARKLY],
+    external_stylesheets=[
+        dbc.themes.DARKLY,
+        "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap",
+    ],
     title="Portfolio Risk Analytics",
     suppress_callback_exceptions=True,
 )
 
-server = app.server  # Expose for WSGI / gunicorn deployment.
-
-# ---------------------------------------------------------------------------
-# Layout
-# ---------------------------------------------------------------------------
-app.layout = dbc.Container(
-    [
-        # Header
-        dbc.Row(
-            dbc.Col(
-                html.H2(
-                    "⚡ Portfolio Risk Analytics",
-                    className="text-center my-3",
-                ),
-            )
-        ),
-        # Row 1: Portfolio construction panel
-        dbc.Row(
-            dbc.Col(portfolio_panel(), lg=12),
-            className="mb-3",
-        ),
-        # Graphs rendered inside this div by the callback.
-        html.Div(id="dashboard-content"),
-    ],
-    fluid=True,
-    className="px-4 pb-4",
-)
+server = app.server  # for gunicorn / deployment
 
 
-# ---------------------------------------------------------------------------
-# Main callback — fires on Recalculate click.
-# ---------------------------------------------------------------------------
-@callback(
-    Output("dashboard-content", "children"),
-    Output("weight-validation", "children"),
-    Input("recalc-btn", "n_clicks"),
-    State({"type": "ticker-dd", "index": ALL}, "value"),
-    State({"type": "weight-input", "index": ALL}, "value"),
-    State("lookback-select", "value"),
-    prevent_initial_call=False,  # render default view on load
-)
-def update_dashboard(n_clicks, tickers_raw, weights_raw, lookback):
-    """
-    Core callback: gather inputs, validate weights, fetch data, compute
-    all risk metrics, and return the full dashboard layout.
-    """
+# ─── Custom CSS ──────────────────────────────────────────────────────
 
-    # --- Parse & validate inputs -----------------------------------------
-    pairs = [
-        (t, float(w))
-        for t, w in zip(tickers_raw, weights_raw)
-        if t and w and float(w) > 0
-    ]
+GLOBAL_CSS = """
+body {
+    background-color: #0d0f13 !important;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif !important;
+}
+.card { border-radius: 8px !important; }
+.dash-graph .js-plotly-plot { border-radius: 8px; }
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: #12141a; }
+::-webkit-scrollbar-thumb { background: #2a2d35; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #3a3d45; }
 
-    if not pairs:
-        # Fall back to defaults on first load or empty input.
-        pairs = list(DEFAULT_WEIGHTS.items())
+/* Section headers */
+.section-header {
+    color: #636e72;
+    font-size: 0.7rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    font-weight: 600;
+    margin-bottom: 12px;
+    padding-left: 4px;
+}
+"""
 
-    tickers = [p[0] for p in pairs]
-    raw_weights = {p[0]: p[1] for p in pairs}
-    total_weight = sum(raw_weights.values())
 
-    # Validation badge.
-    if abs(total_weight - 100) > 0.1:
-        validation = dbc.Alert(
-            f"Weights sum to {total_weight:.1f}% — must equal 100%. "
-            "Results use normalised weights.",
-            color="warning",
-            className="py-1 px-2 mb-0",
-        )
-    else:
-        validation = dbc.Alert(
-            "✓ Weights valid", color="success", className="py-1 px-2 mb-0"
-        )
+# ─── Layout ──────────────────────────────────────────────────────────
 
-    # Normalise weights to 0-1 scale.
-    weights = {t: w / total_weight for t, w in raw_weights.items()}
-
-    # --- Fetch data & compute returns ------------------------------------
-    lookback_years = int(lookback) if lookback else 3
-    all_tickers = list(set(tickers + [BENCHMARK]))
-    prices = fetch_prices(all_tickers, lookback_years)
-
-    # Ensure columns match requested tickers (handles case sensitivity).
-    available = [c for c in all_tickers if c in prices.columns]
-    prices = prices[available]
-    returns = log_returns(prices)
-
-    # Portfolio return series.
-    # Only include tickers that are actually in the returns DataFrame.
-    valid_weights = {t: weights[t] for t in weights if t in returns.columns}
-    if not valid_weights:
-        return html.P("No valid tickers found.", className="text-danger"), validation
-
-    # Re-normalise after dropping missing tickers.
-    w_sum = sum(valid_weights.values())
-    valid_weights = {t: v / w_sum for t, v in valid_weights.items()}
-
-    port_ret = portfolio_returns(returns, valid_weights)
-    bench_ret = returns[BENCHMARK] if BENCHMARK in returns.columns else port_ret
-
-    # --- Build charts ----------------------------------------------------
-    fig_cum = cumulative_returns_chart(returns, port_ret)
-    fig_corr = correlation_heatmap(correlation_matrix(returns))
-    fig_rvol = rolling_vol_chart(port_ret, bench_ret)
-    fig_scatter = risk_return_scatter(returns, valid_weights)
-    fig_hist = return_histogram(port_ret)
-    fig_dd = drawdown_chart(port_ret)
-
-    # --- Summary metrics -------------------------------------------------
-    cum_port = port_ret.cumsum().apply(np.exp) - 1
-    metrics = {
-        "Ann. Return": f"{annualised_return(port_ret):.1%}",
-        "Ann. Vol": f"{annualised_vol(port_ret):.1%}",
-        "Sharpe": f"{sharpe_ratio(port_ret):.2f}",
-        "Max DD": f"{max_drawdown(cum_port):.1%}",
-        "VaR 95%": f"{parametric_var(port_ret, 0.95):.2%}",
-        "VaR 99%": f"{parametric_var(port_ret, 0.99):.2%}",
-    }
-
-    cards = summary_cards(metrics)
-
-    # --- Assemble layout -------------------------------------------------
-    content = html.Div(
-        [
-            # Row 2: cumulative returns + correlation
-            dbc.Row(
-                [
-                    dbc.Col(dcc.Graph(figure=fig_cum), lg=7),
-                    dbc.Col(dcc.Graph(figure=fig_corr), lg=5),
-                ],
-                className="mb-3",
-            ),
-            # Row 3: rolling vol + risk-return scatter
-            dbc.Row(
-                [
-                    dbc.Col(dcc.Graph(figure=fig_rvol), lg=6),
-                    dbc.Col(dcc.Graph(figure=fig_scatter), lg=6),
-                ],
-                className="mb-3",
-            ),
-            # Row 4: histogram + drawdown
-            dbc.Row(
-                [
-                    dbc.Col(dcc.Graph(figure=fig_hist), lg=6),
-                    dbc.Col(dcc.Graph(figure=fig_dd), lg=6),
-                ],
-                className="mb-3",
-            ),
-            # Row 5: summary cards
-            cards,
-        ]
+def _chart_card(children, **kwargs):
+    """Wrap a chart in a styled card."""
+    return dbc.Card(
+        dbc.CardBody(children, style={"padding": "12px"}),
+        style={
+            "backgroundColor": "#12141a",
+            "border": "1px solid #1e2028",
+            "borderRadius": "8px",
+        },
+        **kwargs,
     )
 
-    return content, validation
+
+app.layout = html.Div(
+    [
+        # Inject custom CSS
+        html.Style(GLOBAL_CSS),
+
+        dbc.Row(
+            [
+                # ── Sidebar ──────────────────────────────────────
+                dbc.Col(
+                    build_sidebar(),
+                    width=2,
+                    style={"padding": 0, "borderRight": "1px solid #1e2028"},
+                ),
+
+                # ── Main content ─────────────────────────────────
+                dbc.Col(
+                    html.Div(
+                        [
+                            # Section 1: KPI cards
+                            html.P("PORTFOLIO OVERVIEW", className="section-header mt-2"),
+                            html.Div(id="kpi-cards"),
+
+                            # Section 2: Hero chart — cumulative returns
+                            html.P("PERFORMANCE", className="section-header"),
+                            dbc.Row(
+                                [
+                                    dbc.Col(
+                                        _chart_card(dcc.Graph(id="cum-returns-chart", config={"displayModeBar": False})),
+                                        md=12,
+                                    ),
+                                ],
+                                className="g-3 mb-4",
+                            ),
+
+                            # Section 3: Risk analysis
+                            html.P("RISK ANALYSIS", className="section-header"),
+                            dbc.Row(
+                                [
+                                    dbc.Col(
+                                        _chart_card(dcc.Graph(id="rolling-vol-chart", config={"displayModeBar": False})),
+                                        md=6,
+                                    ),
+                                    dbc.Col(
+                                        _chart_card(dcc.Graph(id="var-histogram", config={"displayModeBar": False})),
+                                        md=6,
+                                    ),
+                                ],
+                                className="g-3 mb-4",
+                            ),
+
+                            # Section 4: Diversification
+                            html.P("DIVERSIFICATION", className="section-header"),
+                            dbc.Row(
+                                [
+                                    dbc.Col(
+                                        _chart_card(dcc.Graph(id="corr-heatmap", config={"displayModeBar": False})),
+                                        md=6,
+                                    ),
+                                    dbc.Col(
+                                        _chart_card(dcc.Graph(id="risk-return-scatter", config={"displayModeBar": False})),
+                                        md=6,
+                                    ),
+                                ],
+                                className="g-3 mb-4",
+                            ),
+
+                            # Section 5: Worst case
+                            html.P("WORST CASE", className="section-header"),
+                            dbc.Row(
+                                [
+                                    dbc.Col(
+                                        _chart_card(dcc.Graph(id="drawdown-chart", config={"displayModeBar": False})),
+                                        md=12,
+                                    ),
+                                ],
+                                className="g-3 mb-4",
+                            ),
+                        ],
+                        style={"padding": "24px 32px"},
+                    ),
+                    width=10,
+                    style={"backgroundColor": "#0d0f13", "minHeight": "100vh"},
+                ),
+            ],
+            className="g-0",
+        ),
+    ]
+)
 
 
-# ---------------------------------------------------------------------------
-# Run
-# ---------------------------------------------------------------------------
+# ─── Callbacks ───────────────────────────────────────────────────────
+
+@app.callback(
+    [
+        Output("kpi-cards", "children"),
+        Output("cum-returns-chart", "figure"),
+        Output("rolling-vol-chart", "figure"),
+        Output("var-histogram", "figure"),
+        Output("corr-heatmap", "figure"),
+        Output("risk-return-scatter", "figure"),
+        Output("drawdown-chart", "figure"),
+        Output("weight-validation", "children"),
+    ],
+    [Input("recalc-btn", "n_clicks")],
+    [
+        State({"type": "ticker-input", "index": ALL}, "value"),
+        State({"type": "weight-input", "index": ALL}, "value"),
+        State("period-select", "value"),
+    ],
+    prevent_initial_call=False,
+)
+def update_dashboard(n_clicks, tickers, weights_pct, period):
+    """Master callback — recalculates everything on button click or initial load."""
+
+    # ── Parse inputs ─────────────────────────────────────────────
+    portfolio = {}
+    for t, w in zip(tickers, weights_pct):
+        if t and w and float(w) > 0:
+            portfolio[t.strip().upper()] = float(w) / 100.0
+
+    if not portfolio:
+        portfolio = {"AAPL": 0.2, "MSFT": 0.2, "JNJ": 0.2, "JPM": 0.2, "XOM": 0.2}
+
+    total_weight = sum(portfolio.values())
+
+    # Validation badge
+    if abs(total_weight - 1.0) < 0.001:
+        validation = dbc.Badge("✓ Weights sum to 100%", color="success", className="p-2")
+    else:
+        validation = dbc.Badge(
+            f"⚠ Weights sum to {total_weight:.1%}",
+            color="warning",
+            className="p-2",
+        )
+
+    # ── Fetch data ───────────────────────────────────────────────
+    ticker_list = list(portfolio.keys())
+    prices = data_loader.fetch_prices(ticker_list, period=period or "3Y")
+
+    # Ensure all requested tickers are in the dataframe
+    available = [t for t in ticker_list if t in prices.columns]
+    if not available:
+        empty = _empty_figures()
+        return (html.Div("No data found for the given tickers."), *empty, validation)
+
+    # Re-normalise weights to available tickers
+    w_sum = sum(portfolio[t] for t in available)
+    weights = {t: portfolio[t] / w_sum for t in available}
+
+    returns = rm.log_returns(prices)
+    port_ret = rm.portfolio_returns(returns, weights)
+
+    # ── KPI metrics ──────────────────────────────────────────────
+    ann_ret = rm.annualised_return(port_ret)
+    ann_vol = rm.annualised_vol(port_ret)
+    sharpe = rm.sharpe_ratio(port_ret)
+    cum_ret = (1 + port_ret).cumprod() - 1
+    mdd = rm.max_drawdown(cum_ret)
+    var_95 = rm.parametric_var(port_ret, 0.95)
+    var_99 = rm.parametric_var(port_ret, 0.99)
+
+    kpi = build_kpi_row({
+        "ann_return": ann_ret,
+        "ann_vol": ann_vol,
+        "sharpe": sharpe,
+        "max_dd": mdd,
+        "var_95": var_95,
+        "var_99": var_99,
+    })
+
+    # ── Charts ───────────────────────────────────────────────────
+
+    # 1) Cumulative returns
+    fig_cum = charts.cumulative_returns_chart(returns, port_ret, "SPY")
+
+    # 2) Rolling volatility
+    vol30 = rm.rolling_volatility(port_ret, 30)
+    vol90 = rm.rolling_volatility(port_ret, 90)
+    bench_vol30 = rm.rolling_volatility(returns["SPY"], 30) if "SPY" in returns.columns else None
+    fig_vol = charts.rolling_vol_chart(vol30, vol90, bench_vol30)
+
+    # 3) VaR histogram
+    fig_var = charts.var_histogram(port_ret, var_95, var_99)
+
+    # 4) Correlation heatmap (holdings only, no benchmark)
+    holding_cols = [t for t in available if t != "SPY"]
+    corr = rm.correlation_matrix(returns[holding_cols]) if len(holding_cols) > 1 else rm.correlation_matrix(returns[available])
+    fig_corr = charts.correlation_heatmap(corr)
+
+    # 5) Risk-return scatter
+    ticker_data = []
+    for t in available:
+        if t == "SPY":
+            continue
+        t_ret = rm.annualised_return(returns[t])
+        t_vol = rm.annualised_vol(returns[t])
+        t_sharpe = rm.sharpe_ratio(returns[t])
+        ticker_data.append({"ticker": t, "return": t_ret, "vol": t_vol, "sharpe": t_sharpe})
+
+    portfolio_point = {"return": ann_ret, "vol": ann_vol, "sharpe": sharpe}
+    fig_scatter = charts.risk_return_scatter(ticker_data, portfolio_point)
+
+    # 6) Drawdown
+    dd = rm.drawdown_series(cum_ret)
+    try:
+        dd_window = rm.max_drawdown_window(cum_ret)
+    except Exception:
+        dd_window = None
+    fig_dd = charts.drawdown_chart(dd, dd_window)
+
+    return (kpi, fig_cum, fig_vol, fig_var, fig_corr, fig_scatter, fig_dd, validation)
+
+
+def _empty_figures():
+    """Return 6 empty figures for error states."""
+    import plotly.graph_objects as go
+    empty = go.Figure()
+    empty.update_layout(
+        template="plotly_dark",
+        paper_bgcolor="#12141a",
+        plot_bgcolor="#12141a",
+        annotations=[dict(text="No data", showarrow=False, font=dict(size=20, color="#636e72"))],
+    )
+    return (empty,) * 6
+
+
+# ─── Run ─────────────────────────────────────────────────────────────
+
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0", port=8050)

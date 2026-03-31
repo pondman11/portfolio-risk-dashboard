@@ -1,72 +1,48 @@
-# Portfolio Risk Analytics Dashboard
+# ⚡ Portfolio Risk Analytics Dashboard
 
-Interactive Plotly Dash application for portfolio-level risk analytics. Pull historical equity prices from Yahoo Finance, construct a weighted portfolio, and visualise key risk metrics used by asset managers and risk analysts.
-
-![Python](https://img.shields.io/badge/python-3.10%2B-blue)
-![Dash](https://img.shields.io/badge/dash-2.14%2B-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
-
-## Features
-
-| Feature | Description |
-|---|---|
-| **Portfolio Construction** | Pick up to 10 tickers, assign weights, choose 1/3/5-year lookback |
-| **Cumulative Returns** | Portfolio vs. individual holdings vs. SPY benchmark |
-| **Correlation Heatmap** | Pairwise return correlations for diversification analysis |
-| **Rolling Volatility** | 30-day and 90-day annualised vol for portfolio and benchmark |
-| **Risk–Return Scatter** | Annualised return vs. vol per holding, Sharpe on hover |
-| **VaR Analysis** | Daily return histogram with parametric & historical VaR lines |
-| **Drawdown Chart** | Drawdown curve with worst drawdown period highlighted |
-| **Summary Cards** | Ann. return, vol, Sharpe, max drawdown, 95% & 99% VaR |
+Interactive portfolio risk analytics built with Plotly Dash. Dark-themed, narrative-driven layout.
 
 ## Quick Start
 
 ```bash
-# Clone the repo
-git clone https://github.com/pondman11/portfolio-risk-dashboard.git
-cd portfolio-risk-dashboard
-
-# Create a virtual environment (recommended)
-python -m venv .venv && source .venv/bin/activate
-
-# Install dependencies
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
-
-# Run the app
 python app.py
 ```
 
-Open **http://localhost:8050** in your browser.
+Open [http://localhost:8050](http://localhost:8050)
+
+## Features
+
+- **Portfolio Construction** — sidebar with ticker/weight inputs, lookback period selector
+- **KPI Cards** — annualised return, volatility, Sharpe, max drawdown, VaR at a glance
+- **Cumulative Returns** — portfolio vs benchmark vs individual holdings
+- **Rolling Volatility** — 30d/90d annualised vol with benchmark overlay
+- **VaR Distribution** — daily return histogram with 95%/99% VaR thresholds
+- **Correlation Heatmap** — pairwise return correlations
+- **Risk-Return Scatter** — vol vs return per holding with portfolio highlighted
+- **Drawdown Chart** — worst drawdown period highlighted
 
 ## Project Structure
 
 ```
-portfolio-risk-dashboard/
-├── app.py                  # Dash entry point, layout, and callbacks
-├── data_loader.py          # yfinance data retrieval and caching
-├── risk_metrics.py         # VaR, Sharpe, drawdown, rolling vol calculations
+├── app.py                     # Dash entry point, layout, callbacks
+├── data_loader.py             # yfinance data retrieval + caching
+├── risk_metrics.py            # VaR, Sharpe, drawdown, rolling vol
 ├── components/
-│   ├── portfolio_input.py  # Ticker/weight input panel
-│   ├── charts.py           # Chart-building functions
-│   └── cards.py            # Summary metric cards
+│   ├── portfolio_input.py     # Sidebar panel
+│   ├── charts.py              # All Plotly figure builders
+│   └── cards.py               # KPI summary cards
 ├── requirements.txt
 └── README.md
 ```
 
-## Calculation Notes
-
-- All calculations use **log returns** (`np.log(price / price.shift(1))`), standard in quantitative finance.
-- Annualisation assumes **252 trading days** per year.
-- **Parametric VaR** assumes normally distributed returns; **Historical VaR** uses empirical percentiles.
-- Default risk-free rate: **5%** (configurable in `risk_metrics.py`).
-
 ## Tech Stack
 
-- **Data:** `yfinance`
-- **Processing:** `pandas`, `numpy`
-- **Visualisation:** `plotly`, `dash`
-- **Styling:** `dash-bootstrap-components` (DARKLY theme)
-
-## License
-
-MIT
+| Layer | Tool |
+|---|---|
+| Data | yfinance |
+| Processing | pandas, numpy, scipy |
+| Visualization | plotly, dash |
+| Styling | dash-bootstrap-components (DARKLY) |
