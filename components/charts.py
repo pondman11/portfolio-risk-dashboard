@@ -3,6 +3,7 @@ charts.py — All Plotly figure builders.
 
 Design: Minimal, dark, generous whitespace. Data-forward.
 Tooltips use hovermode="x unified" where appropriate.
+Title inside the top margin, legend below title but above plot area.
 """
 
 import plotly.graph_objects as go
@@ -34,14 +35,21 @@ CHART_LAYOUT = dict(
     paper_bgcolor=PAPER_COLOR,
     plot_bgcolor=BG_COLOR,
     font=dict(family="Inter, -apple-system, sans-serif", color=TEXT_COLOR, size=11),
-    margin=dict(l=50, r=20, t=40, b=35),
+    margin=dict(l=50, r=20, t=70, b=35),
+    title=dict(
+        font=dict(size=13, color="#6a7080"),
+        x=0.01,
+        y=0.98,
+        xanchor="left",
+        yanchor="top",
+    ),
     legend=dict(
         orientation="h",
-        yanchor="bottom",
-        y=1.02,
+        yanchor="top",
+        y=-0.08,
         xanchor="left",
         x=0,
-        font=dict(size=10, color="#6a7080"),
+        font=dict(size=10, color="#5a6270"),
         bgcolor="rgba(0,0,0,0)",
     ),
     xaxis=dict(gridcolor=GRID_COLOR, showgrid=False, zeroline=False, showline=False),
@@ -108,12 +116,11 @@ def cumulative_returns_chart(
         hovertemplate="%{y:.1%}",
     ))
 
-    fig.update_layout(
+    return _apply_layout(fig,
         yaxis_tickformat=".0%",
-        title=dict(text="Cumulative Returns", font=dict(size=14, color="#c8cdd5")),
-        height=380,
+        title_text="Cumulative Returns",
+        height=400,
     )
-    return _apply_layout(fig)
 
 
 # ─── Correlation Heatmap ──────────────────────────────────────────────
@@ -142,14 +149,14 @@ def correlation_heatmap(corr_matrix: pd.DataFrame) -> go.Figure:
         ),
     ))
 
-    fig.update_layout(
-        title=dict(text="Correlations", font=dict(size=14, color="#c8cdd5")),
+    return _apply_layout(fig,
+        title_text="Correlations",
         height=380,
         xaxis=dict(side="bottom"),
         yaxis=dict(autorange="reversed"),
         hovermode="closest",
+        showlegend=False,
     )
-    return _apply_layout(fig)
 
 
 # ─── Rolling Volatility ──────────────────────────────────────────────
@@ -188,12 +195,11 @@ def rolling_vol_chart(
             hovertemplate="%{y:.1%}",
         ))
 
-    fig.update_layout(
+    return _apply_layout(fig,
         yaxis_tickformat=".0%",
-        title=dict(text="Rolling Volatility", font=dict(size=14, color="#c8cdd5")),
-        height=360,
+        title_text="Rolling Volatility",
+        height=380,
     )
-    return _apply_layout(fig)
 
 
 # ─── VaR Histogram ──────────────────────────────────────────────────
@@ -225,16 +231,16 @@ def var_histogram(
             annotation_font=dict(size=10, color=color),
         )
 
-    fig.update_layout(
-        title=dict(text="Return Distribution", font=dict(size=14, color="#c8cdd5")),
+    return _apply_layout(fig,
+        title_text="Return Distribution",
         xaxis_tickformat=".1%",
         xaxis_title=None,
         yaxis_title=None,
-        height=360,
+        height=380,
         bargap=0.02,
         hovermode="closest",
+        showlegend=False,
     )
-    return _apply_layout(fig)
 
 
 # ─── Risk-Return Scatter ─────────────────────────────────────────────
@@ -283,8 +289,8 @@ def risk_return_scatter(
         ),
     ))
 
-    fig.update_layout(
-        title=dict(text="Risk vs Return", font=dict(size=14, color="#c8cdd5")),
+    return _apply_layout(fig,
+        title_text="Risk vs Return",
         xaxis_title="Volatility",
         yaxis_title="Return",
         xaxis_tickformat=".0%",
@@ -293,7 +299,6 @@ def risk_return_scatter(
         showlegend=False,
         hovermode="closest",
     )
-    return _apply_layout(fig)
 
 
 # ─── Drawdown Chart ──────────────────────────────────────────────────
@@ -325,9 +330,9 @@ def drawdown_chart(
             annotation_font=dict(size=10, color="#ee5a24"),
         )
 
-    fig.update_layout(
-        title=dict(text="Drawdown", font=dict(size=14, color="#c8cdd5")),
+    return _apply_layout(fig,
+        title_text="Drawdown",
         yaxis_tickformat=".0%",
-        height=340,
+        height=360,
+        showlegend=False,
     )
-    return _apply_layout(fig)
